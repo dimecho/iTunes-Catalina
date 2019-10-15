@@ -153,7 +153,7 @@ end tell
 on excludePlaylists(playlistName)
 	set excludeList to {"Library", "Downloaded", "Music", "Movies", "TV Shows", "Audiobooks"}
 	repeat with i from 1 to count excludeList
-		if playlistName contains item i of excludeList then
+		if playlistName is equal to item i of excludeList then
 			return true
 		end if
 	end repeat
