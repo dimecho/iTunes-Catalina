@@ -6,6 +6,9 @@
 3) Run the Script (Select "iTunes Music Library.xml")
 *)
 
+#version 1.2
+-- Fixed playlists with same names (based on persistent ID)
+
 #version 1.1
 -- Fixed iPod sync
 -- Improved performance
@@ -17,12 +20,9 @@ use AppleScript version "2.7"
 use scripting additions
 use framework "iTunesLibrary"
 
-# Performance Fix
--------------------------------
-global search_parentPersistentID, search_playlistName
-set search_parentPersistentID to {}
-set search_playlistName to {}
--------------------------------
+global search_oldPersistentID, search_newPersistentID
+set search_oldPersistentID to {}
+set search_newPersistentID to {}
 
 set musicPath to (path to music folder from user domain) as alias
 set iTunesMusicLibrary to POSIX path of (choose file with prompt "Please choose iTunes Music Library.xml" of type {"XML"} default location musicPath)
@@ -40,24 +40,57 @@ tell application "System Events"
 		set playlistName to value of property list item "Name" of playlistID as string
 		
 		if not (my excludePlaylists(playlistName)) then
+			
+			set playlistPersistentID to value of property list item "Playlist Persistent ID" of playlistID as string
 			try
 				set playlistFolder to value of property list item "Folder" of playlistID
-			on error
-				log ("Playlist:" & playlistName)
+				
+				log ("Folder:" & playlistName & " with ID " & playlistPersistentID)
 				
 				tell application "Music"
-					if playlistName is equal to "Music" then #Playlist from old iTunes 10? cannot be named "Music"
-						set playlistName to "_Music"
+					if not (folder playlist playlistName exists) then
+						set folderPersistentID to persistent ID of (make new folder playlist with properties {name:playlistName})
+						set end of search_oldPersistentID to playlistPersistentID
+						set end of search_newPersistentID to folderPersistentID
+					else
+						set folderPersistentID to my translateOldNew(playlistPersistentID, playlistName, true)
 					end if
+				end tell
+				
+				try
+					set parentPersistentID to value of property list item "Parent Persistent ID" of playlistID as string
+					log (playlistName & " has a parent folder " & parentPersistentID)
+					set parentName to my findParentName(keyPlist, parentPersistentID)
+					tell application "Music"
+						if not (folder playlist parentName exists) then
+							set _folderPersistentID to persistent ID of (make new folder playlist with properties {name:parentName})
+							set end of search_oldPersistentID to parentPersistentID
+							set end of search_newPersistentID to folderPersistentID
+						else
+							set _folderPersistentID to my translateOldNew(parentPersistentID, parentName, true)
+						end if
+						move (first folder playlist whose persistent ID is folderPersistentID) to first folder playlist whose persistent ID is _folderPersistentID
+					end tell
+				on error
+					log (playlistName & " is Root Folder")
+				end try
+			on error
+				log ("Playlist:" & playlistName & " with ID " & playlistPersistentID)
+				
+				tell application "Music"
 					if not (user playlist playlistName exists) then
-						make new user playlist with properties {name:playlistName}
-						set the view of the front browser window to playlist playlistName
-						(*
-						tell application "System Events" to tell process "Music"
-							click menu item "Songs" of menu 1 of menu item "View As" of menu 1 of menu bar item "View" of menu bar 1
-						end tell
-						*)
+						set _playlistPersistentID to persistent ID of (make new user playlist with properties {name:playlistName})
+						set end of search_oldPersistentID to playlistPersistentID
+						set end of search_newPersistentID to _playlistPersistentID
 					end if
+					set playlistPersistentID to my translateOldNew(playlistPersistentID, playlistName, false)
+					
+					set the view of the front browser window to playlist playlistName
+					(*
+					tell application "System Events" to tell process "Music"
+						click menu item "Songs" of menu 1 of menu item "View As" of menu 1 of menu bar item "View" of menu bar 1
+					end tell
+					*)
 				end tell
 				try
 					set playlistItems to property list item "Playlist Items" of playlistID
@@ -84,14 +117,14 @@ tell application "System Events"
 							tell application "Music"
 								set trackFile to (first track whose name is trackName and size is equal to trackSize)
 								set database_ID to database ID of trackFile
-								if not ((first track of playlist playlistName whose database ID is database_ID) exists) then
+								if not ((first track of (first user playlist whose persistent ID is playlistPersistentID) whose database ID is database_ID) exists) then
 									#This fixes iPod Sync
-									copy trackFile to the end of user playlist playlistName
+									copy trackFile to the end of (first user playlist whose persistent ID is playlistPersistentID)
 									#This breaks iPod Sync
 									#duplicate trackFile to the end of user playlist playlistName
-								end if
-								if trackRating is greater than 0 then
-									set rating of trackFile to trackRating
+									if trackRating is greater than 0 then
+										set rating of trackFile to trackRating
+									end if
 								end if
 							end tell
 						end try
@@ -101,22 +134,17 @@ tell application "System Events"
 				try
 					set parentPersistentID to value of property list item "Parent Persistent ID" of playlistID as string
 					log (playlistName & " has a parent folder " & parentPersistentID)
-					
-					# Performance Fix
-					-------------------------------
-					set alreadyProcessed to false
-					repeat with i from 1 to count search_parentPersistentID
-						if parentPersistentID contains item i of search_parentPersistentID then
-							log ("Parent Found: " & item i of search_playlistName)
-							tell application "Music" to move user playlist playlistName to folder playlist (item i of search_playlistName as string)
-							set alreadyProcessed to true
-							exit repeat
+					set parentName to my findParentName(keyPlist, parentPersistentID)
+					tell application "Music"
+						if not (folder playlist parentName exists) then
+							set folderPersistentID to persistent ID of (make new folder playlist with properties {name:parentName})
+							set end of search_oldPersistentID to parentPersistentID
+							set end of search_newPersistentID to folderPersistentID
+						else
+							set folderPersistentID to my translateOldNew(parentPersistentID, parentName, true)
 						end if
-					end repeat
-					-------------------------------
-					if not alreadyProcessed then
-						my findParentPlaylist(keyPlist, parentPersistentID, playlistName, false)
-					end if
+						move (first user playlist whose persistent ID is playlistPersistentID) to first folder playlist whose persistent ID is folderPersistentID
+					end tell
 				end try
 			end try
 		end if
@@ -124,7 +152,7 @@ tell application "System Events"
 end tell
 
 on excludePlaylists(playlistName)
-	set excludeList to {"Library", "Downloaded", "Movies", "TV Shows", "Audiobooks"}
+	set excludeList to {"Library", "Downloaded", "Music", "Movies", "TV Shows", "Audiobooks"}
 	repeat with i from 1 to count excludeList
 		if playlistName contains item i of excludeList then
 			return true
@@ -133,7 +161,25 @@ on excludePlaylists(playlistName)
 	return false
 end excludePlaylists
 
-on findParentPlaylist(keyPlist, _parentPersistentID, _playlistName, _folder)
+on translateOldNew(_id, _name, _folder)
+	
+	repeat with i from 1 to count search_oldPersistentID
+		if _id contains item i of search_oldPersistentID then
+			return item i of search_newPersistentID
+		end if
+	end repeat
+	
+	# Playlist was created before script started
+	tell application "Music"
+		if _folder then
+			return persistent ID of folder playlist _name as string
+		else
+			return persistent ID of user playlist _name as string
+		end if
+	end tell
+end translateOldNew
+
+on findParentName(keyPlist, parentPersistentID)
 	
 	tell application "System Events"
 		repeat with playlistID in keyPlist
@@ -141,38 +187,13 @@ on findParentPlaylist(keyPlist, _parentPersistentID, _playlistName, _folder)
 				set playlistFolder to value of property list item "Folder" of playlistID #Only process folders, try will fail for regular playlists
 				set playlistPersistentID to value of property list item "Playlist Persistent ID" of playlistID as string
 				
-				if _parentPersistentID is equal to playlistPersistentID then
-					set playlistName to value of property list item "Name" of playlistID
+				if parentPersistentID is equal to playlistPersistentID then
+					set playlistName to value of property list item "Name" of playlistID as string
 					
 					log ("Parent Found: " & playlistName)
-					
-					tell application "Music"
-						if not (folder playlist playlistName exists) then
-							make new folder playlist with properties {name:playlistName}
-						end if
-						if _folder then
-							move folder playlist _playlistName to folder playlist playlistName
-						else
-							move user playlist _playlistName to folder playlist playlistName
-						end if
-					end tell
-					
-					# Performance Fix
-					-------------------------------
-					set end of search_parentPersistentID to playlistPersistentID
-					set end of search_playlistName to playlistName
-					-------------------------------
-					
-					try
-						set parentPersistentID to value of property list item "Parent Persistent ID" of playlistID
-						log (playlistName & " also has a parent ...looking for " & parentPersistentID)
-						my findParentPlaylist(keyPlist, parentPersistentID, playlistName, true)
-					on error
-						log (playlistName & " is Root Folder")
-					end try
-					exit repeat
+					return playlistName
 				end if
 			end try
 		end repeat
 	end tell
-end findParentPlaylist
+end findParentName
