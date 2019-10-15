@@ -79,11 +79,10 @@ tell application "System Events"
 				
 				tell application "Music"
 					if not (user playlist playlistName exists) then
-						set _playlistPersistentID to persistent ID of (make new user playlist with properties {name:playlistName})
-						set end of search_oldPersistentID to playlistPersistentID
-						set end of search_newPersistentID to _playlistPersistentID
+						set playlistPersistentID to persistent ID of (make new user playlist with properties {name:playlistName})
+					else
+						set playlistPersistentID to my translateOldNew(playlistPersistentID, playlistName, false)
 					end if
-					set playlistPersistentID to my translateOldNew(playlistPersistentID, playlistName, false)
 					
 					set the view of the front browser window to playlist playlistName
 					(*
@@ -183,17 +182,14 @@ on findParentName(keyPlist, parentPersistentID)
 	
 	tell application "System Events"
 		repeat with playlistID in keyPlist
-			try
-				set playlistFolder to value of property list item "Folder" of playlistID #Only process folders, try will fail for regular playlists
-				set playlistPersistentID to value of property list item "Playlist Persistent ID" of playlistID as string
+			set playlistPersistentID to value of property list item "Playlist Persistent ID" of playlistID as string
+			if parentPersistentID is equal to playlistPersistentID then
+				set playlistName to value of property list item "Name" of playlistID as string
 				
-				if parentPersistentID is equal to playlistPersistentID then
-					set playlistName to value of property list item "Name" of playlistID as string
-					
-					log ("Parent Found: " & playlistName)
-					return playlistName
-				end if
-			end try
+				log ("Parent Found: " & playlistName)
+				return playlistName
+			end if
 		end repeat
 	end tell
+	return "Uknown"
 end findParentName
