@@ -163,7 +163,7 @@ end excludePlaylists
 on translateOldNew(_id, _name, _folder)
 	
 	repeat with i from 1 to count search_oldPersistentID
-		if _id contains item i of search_oldPersistentID then
+		if _id is equal to item i of search_oldPersistentID then
 			return item i of search_newPersistentID
 		end if
 	end repeat
